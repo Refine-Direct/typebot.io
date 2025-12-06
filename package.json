@@ -3,7 +3,7 @@
   "version": "3.13.2",
   "private": true,
   "overrides": {
-	  "next": "^15.4.8"
+	  "next": "~15.3.6"
   },
   "workspaces": [
     "packages/*",
@@ -17,8 +17,7 @@
   "scripts": {
     "postinstall": "turbo run db:generate",
     "prepare": "husky",
-//    "pre-commit": "turbo run format-and-lint lint-repo check-broken-links test",
-    "pre-commit": "echo 1",
+    "pre-commit": "echo 'turbo run format-and-lint lint-repo check-broken-links test'",
     "format-and-lint": "biome check .",
     "format-and-lint:fix": "biome check . --write --unsafe",
     "lint-repo": "sherif -r unordered-dependencies -r packages-without-package-json --ignore-package @typebot.io/legacy --ignore-package bot-engine",

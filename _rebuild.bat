@@ -5,9 +5,9 @@ call pm2 stop all
 REM Install dependencies
 call bun install
 REM Database migration
-bunx nx db:migrate prisma
+call bunx nx db:migrate prisma
 REM Build builder and viewer
-bunx nx run-many -t build -p builder,viewer
+call bunx nx run-many -t build -p builder,viewer
 REM Restart services
 call pm2 start all
 exit 0

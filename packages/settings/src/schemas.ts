@@ -67,17 +67,44 @@ const startConditionSchema = z.object({
   ),
 });
 
-export const whatsAppSettingsSchema = z.object({
-  isEnabled: z.boolean().optional(),
-  startCondition: startConditionSchema.optional(),
-  sessionExpiryTimeout: z
-    .number()
-    .max(48)
-    .min(0.01)
-    .optional()
-    .describe("Expiration delay in hours after latest interaction"),
-  errorAndMarketingStatusWebhookForwardUrl: z.string().url().optional(),
+export const whatsAppWebhookForwardingEventTypeSchema = z.enum([
+  "all",
+  "errorStatuses",
+  "marketingStatuses",
+]);
+export type WhatsAppWebhookForwardingEventType = z.infer<
+  typeof whatsAppWebhookForwardingEventTypeSchema
+>;
+export const whatsAppWebhookForwardingUrlSchema = z.url({
+  protocol: /^https?$/,
 });
+
+export const whatsAppSettingsSchema = z
+  .object({
+    isEnabled: z.boolean().optional(),
+    startCondition: startConditionSchema.optional(),
+    sessionExpiryTimeout: z
+      .number()
+      .max(48)
+      .min(0.01)
+      .optional()
+      .describe("Expiration delay in hours after latest interaction"),
+    errorAndMarketingStatusWebhookForwardUrl:
+      whatsAppWebhookForwardingUrlSchema.optional(),
+    isWebhookForwardingEnabled: z.boolean().optional(),
+    webhookForwardingEventTypes: z
+      .array(whatsAppWebhookForwardingEventTypeSchema)
+      .optional(),
+  })
+  .transform((whatsAppSettings) =>
+    whatsAppSettings.isWebhookForwardingEnabled !== undefined ||
+    !whatsAppSettings.errorAndMarketingStatusWebhookForwardUrl
+      ? whatsAppSettings
+      : {
+          ...whatsAppSettings,
+          isWebhookForwardingEnabled: true,
+        },
+  );
 
 export const settingsSchema = z.object({
   general: generalSettings.optional(),

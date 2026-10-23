@@ -28,6 +28,9 @@ export const handleTriggerSendExportResultsToEmail = async ({
   input: z.infer<typeof triggerSendExportResultsToEmailInputSchema>;
   context: { user: Pick<User, "id" | "email"> };
 }) => {
+  if (!workflowId.startsWith(`${typebotId}:`))
+    throw new ORPCError("NOT_FOUND", { message: "Export job not found" });
+
   const typebot = await prisma.typebot.findUnique({
     where: {
       id: typebotId,
@@ -37,6 +40,7 @@ export const handleTriggerSendExportResultsToEmail = async ({
       name: true,
       groups: true,
       collaborators: {
+        where: { userId: user.id },
         select: {
           userId: true,
           type: true,
@@ -47,8 +51,10 @@ export const handleTriggerSendExportResultsToEmail = async ({
           isSuspended: true,
           isPastDue: true,
           members: {
+            where: { userId: user.id },
             select: {
               userId: true,
+              role: true,
             },
           },
         },

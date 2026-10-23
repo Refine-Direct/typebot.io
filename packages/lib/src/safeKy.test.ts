@@ -59,6 +59,12 @@ describe("safeKy", () => {
         port: 0,
         fetch(req) {
           const url = new URL(req.url);
+          if (url.pathname === "/redirect-to-special") {
+            return new Response(null, {
+              status: 302,
+              headers: { location: url.searchParams.get("target") ?? "" },
+            });
+          }
           if (url.pathname === "/redirect-to-metadata") {
             return new Response(null, {
               status: 302,
@@ -81,6 +87,12 @@ describe("safeKy", () => {
               },
             });
           }
+          if (url.pathname === "/redirect-safe") {
+            return new Response(null, {
+              status: 302,
+              headers: { location: `http://localhost:${server.port}/ok` },
+            });
+          }
           if (url.pathname === "/ok") {
             return new Response(JSON.stringify({ status: "ok" }), {
               headers: { "content-type": "application/json" },
@@ -94,6 +106,20 @@ describe("safeKy", () => {
 
     afterAll(() => {
       server.stop();
+    });
+
+    it.each([
+      "http://100.100.100.200/internal",
+      "http://[::ffff:6464:64c8]/internal",
+      "http://[64:ff9b::6464:64c8]/internal",
+      "http://198.18.0.1/internal",
+    ])("blocks real HTTP redirects to %s", async (target) => {
+      await expect(
+        safeKy.get(
+          `${serverUrl}/redirect-to-special?target=${encodeURIComponent(target)}`,
+          { retry: 0 },
+        ),
+      ).rejects.toThrow("not allowed");
     });
 
     it("should block redirects to cloud metadata endpoints", async () => {
@@ -115,8 +141,26 @@ describe("safeKy", () => {
     });
 
     it("should allow redirects to safe destinations", async () => {
-      const response = await safeKy.get(`${serverUrl}/ok`);
+      const response = await safeKy.get(`${serverUrl}/redirect-safe`);
       expect(response.status).toBe(200);
+    });
+
+    it("should preserve manual redirect mode", async () => {
+      const response = await safeKy.get(`${serverUrl}/redirect-safe`, {
+        redirect: "manual",
+        throwHttpErrors: false,
+      });
+
+      expect(response.status).toBe(302);
+    });
+
+    it("should preserve error redirect mode", async () => {
+      await expect(
+        safeKy.get(`${serverUrl}/redirect-safe`, {
+          redirect: "error",
+          throwHttpErrors: false,
+        }),
+      ).rejects.toThrow("redirect mode");
     });
   });
 });

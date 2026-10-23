@@ -8,6 +8,8 @@
     "targets": {
       "dev": {
         "dependsOn": [
+          "^db:generate",
+          "^db:push",
           {
             "projects": [
               "@typebot.io/react"
@@ -43,6 +45,24 @@
           "cwd": "apps/viewer",
           "command": "playwright test"
         }
+      },
+      "generate-openapi": {
+        "executor": "nx:run-commands",
+        "options": {
+          "cwd": "apps/viewer",
+          "command": "SKIP_ENV_CHECK=true bun --preload ./src/scripts/preloadOpenApiGenerationStubs.ts src/scripts/generateOpenApiSpec.ts"
+        },
+        "cache": true,
+        "inputs": [
+          "default",
+          "^default",
+          {
+            "runtime": "grep -m1 -Eo 'provider *= *\"[a-z]+\"' node_modules/.prisma/client/schema.prisma"
+          }
+        ],
+        "outputs": [
+          "{workspaceRoot}/apps/docs/openapi/viewer.json"
+        ]
       }
     }
   },
@@ -50,10 +70,10 @@
     "partysocket": "^1.0.2",
     "@planetscale/database": "^1.8.0",
     "@sentry/nextjs": "^10.43.0",
-    "@orpc/server": "^1.13.9",
-    "@orpc/openapi": "^1.13.9",
-    "@orpc/zod": "^1.13.9",
-    "@orpc/otel": "^1.13.9",
+    "@orpc/server": "^1.15.7",
+    "@orpc/openapi": "^1.15.7",
+    "@orpc/zod": "^1.15.7",
+    "@orpc/otel": "^1.15.7",
     "@typebot.io/bot-engine": "workspace:*",
     "@typebot.io/react": "workspace:*",
     "@typebot.io/prisma": "workspace:*",
@@ -70,9 +90,9 @@
     "@typebot.io/user": "workspace:*",
     "cors": "^2.8.5",
     "google-spreadsheet": "^4.1.4",
-    "next": "^16.1.6",
+    "next": "^16.2.9",
     "nextjs-cors": "^2.1.2",
-    "nodemailer": "^8.0.5",
+    "nodemailer": "^9.0.1",
     "openai": "^6.9.1",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",

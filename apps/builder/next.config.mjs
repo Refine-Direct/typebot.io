@@ -32,8 +32,24 @@ injectViewerUrlIfVercelPreview(process.env.NEXT_PUBLIC_VIEWER_URL);
 
 configureRuntimeEnv();
 
+const noStoreHeaders = [
+  {
+    key: "Cache-Control",
+    value: "private, no-cache, no-store, max-age=0, must-revalidate",
+  },
+  {
+    key: "Pragma",
+    value: "no-cache",
+  },
+  {
+    key: "Expires",
+    value: "0",
+  },
+];
+
 /** @type {import('next').NextConfig} */
 const nextConfig = {
+  poweredByHeader: false,
   transpilePackages: [
     // https://github.com/nextauthjs/next-auth/discussions/9385#discussioncomment-12023012
     "next-auth",
@@ -70,16 +86,42 @@ const nextConfig = {
               `connect-src 'self' https: wss:${
                 isDev ? " http://localhost:* ws://localhost:*" : ""
               }`,
-              "frame-src 'self' https:",
+              "frame-src 'self' https: http:",
               `img-src 'self' data: blob: https:${isDev ? " http://localhost:*" : ""}`,
               "font-src 'self' https: data:",
               `media-src 'self' blob: https:${isDev ? " http://localhost:* " : ""}`,
               "worker-src 'self' blob:",
               "object-src 'none'",
+              "frame-ancestors 'self'",
+              "form-action 'self'",
+              "base-uri 'self'",
             ].join("; "),
           },
         ],
       },
+      {
+        source: "/((?!api).*)",
+        headers: [
+          {
+            key: "Access-Control-Allow-Origin",
+            value: new URL(
+              process.env.NEXTAUTH_URL || "https://app.typebot.com",
+            ).origin,
+          },
+        ],
+      },
+      ...[
+        "/",
+        "/signin",
+        "/register",
+        "/__ENV.js",
+        "/favicon.svg",
+        "/robots.txt",
+        "/sitemap.xml",
+      ].map((source) => ({
+        source,
+        headers: noStoreHeaders,
+      })),
     ];
   },
   async rewrites() {

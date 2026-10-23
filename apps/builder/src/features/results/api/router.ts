@@ -6,6 +6,10 @@ import {
   deleteResultsInputSchema,
   handleDeleteResults,
 } from "./handleDeleteResults";
+import {
+  getExportJobStatusInputSchema,
+  handleGetExportJobStatus,
+} from "./handleGetExportJobStatus";
 import { getResultInputSchema, handleGetResult } from "./handleGetResult";
 import {
   getResultBlockFileInputSchema,
@@ -25,9 +29,9 @@ import {
   handleGetResultTranscript,
 } from "./handleGetResultTranscript";
 import {
-  handleStreamExportJob,
-  streamExportJobInputSchema,
-} from "./handleStreamExportJob";
+  handleStartExportJob,
+  startExportJobInputSchema,
+} from "./handleStartExportJob";
 import {
   handleTriggerSendExportResultsToEmail,
   triggerSendExportResultsToEmailInputSchema,
@@ -38,6 +42,7 @@ export const resultsRouter = {
     .route({
       method: "GET",
       path: "/v1/typebots/{typebotId}/results",
+      operationId: "results-getResults",
       summary: "List results ordered by descending creation date",
       tags: ["Results"],
     })
@@ -54,6 +59,7 @@ export const resultsRouter = {
     .route({
       method: "GET",
       path: "/v1/typebots/{typebotId}/results/{resultId}",
+      operationId: "results-getResult",
       summary: "Get result by id",
       tags: ["Results"],
     })
@@ -69,6 +75,7 @@ export const resultsRouter = {
     .route({
       method: "GET",
       path: "/v1/typebots/{typebotId}/results/{resultId}/transcript",
+      operationId: "results-getResultTranscript",
       summary: "Get result transcript",
       tags: ["Results"],
     })
@@ -93,6 +100,7 @@ export const resultsRouter = {
     .route({
       method: "GET",
       path: "/v1/typebots/{typebotId}/results/{resultId}/logs",
+      operationId: "results-getResultLogs",
       summary: "List result logs",
       tags: ["Results"],
     })
@@ -104,6 +112,7 @@ export const resultsRouter = {
     .route({
       method: "DELETE",
       path: "/v1/typebots/{typebotId}/results",
+      operationId: "results-deleteResults",
       summary: "Delete results",
       tags: ["Results"],
     })
@@ -145,9 +154,13 @@ export const resultsRouter = {
     )
     .handler(handleGetResultBlockFile),
 
-  streamExportJob: authenticatedProcedure
-    .input(streamExportJobInputSchema)
-    .handler(handleStreamExportJob),
+  startExportJob: authenticatedProcedure
+    .input(startExportJobInputSchema)
+    .handler(handleStartExportJob),
+
+  getExportJobStatus: authenticatedProcedure
+    .input(getExportJobStatusInputSchema)
+    .handler(handleGetExportJobStatus),
 
   triggerSendExportResultsToEmail: authenticatedProcedure
     .output(

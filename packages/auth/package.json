@@ -11,15 +11,32 @@
     },
     "./package.json": "./package.json"
   },
+  "nx": {
+    "targets": {
+      "test": {
+        "executor": "nx:run-commands",
+        "outputs": [
+          "{projectRoot}/test-output/vitest/coverage"
+        ],
+        "options": {
+          "cwd": ".",
+          "command": "vitest run --project=@typebot.io/auth"
+        }
+      }
+    }
+  },
   "dependencies": {
     "effect": "4.0.0-beta.38",
     "@typebot.io/env": "workspace:*",
     "@upstash/ratelimit": "^0.4.3",
-    "next-auth": "^5.0.0-beta.30",
+    "next-auth": "^5.0.0-beta.32",
     "@typebot.io/user": "workspace:*",
     "@typebot.io/lib": "workspace:*",
     "@typebot.io/prisma": "workspace:*",
     "@typebot.io/telemetry": "workspace:*",
     "@typebot.io/config": "workspace:*"
+  },
+  "devDependencies": {
+    "vitest": "^4.0.18"
   }
 }

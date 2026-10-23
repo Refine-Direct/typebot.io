@@ -1,3 +1,4 @@
+import type { LookupFunction } from "node:net";
 import {
   defaultHttpRequestAttributes,
   defaultTimeout,
@@ -23,13 +24,18 @@ import { getCredentials } from "@typebot.io/credentials/getCredentials";
 import { httpProxyCredentialsSchema } from "@typebot.io/credentials/schemas";
 import { env } from "@typebot.io/env";
 import { JSONParse } from "@typebot.io/lib/JSONParse";
-import { rebuildFetchWithoutChunkedEncoding, safeKy } from "@typebot.io/lib/ky";
+import {
+  createPinnedDispatcher,
+  createSafeFetchWithoutChunkedEncoding,
+  safeKy,
+} from "@typebot.io/lib/ky";
 import { parseUnknownError } from "@typebot.io/lib/parseUnknownError";
+import { createSafeProxyAgent } from "@typebot.io/lib/ssrf/createSafeProxyAgent";
 import {
   validateHttpReqHeaders,
   validateHttpReqUrl,
 } from "@typebot.io/lib/ssrf/validateHttpReqUrl";
-import { isDefined, isEmpty, isNotDefined, omit } from "@typebot.io/lib/utils";
+import { isEmpty, isNotDefined, omit } from "@typebot.io/lib/utils";
 import type { LogInSession } from "@typebot.io/logs/schemas";
 import prisma from "@typebot.io/prisma";
 import { parseAnswers } from "@typebot.io/results/parseAnswers";
@@ -39,12 +45,11 @@ import { parseVariables } from "@typebot.io/variables/parseVariables";
 import type { Variable } from "@typebot.io/variables/schemas";
 import { HTTPError, type Options, TimeoutError } from "ky";
 import { stringify } from "qs";
-import { ProxyAgent } from "undici";
+import type { ProxyAgent } from "undici";
 import type { ExecuteIntegrationResponse } from "../../../types";
 import { saveDataInResponseVariableMapping } from "./saveDataInResponseVariableMapping";
 
 type ParsedHttpRequest = ExecutableHttpRequest & {
-  basicAuth: { username?: string; password?: string };
   isJson: boolean;
   proxyUrl?: string;
 };
@@ -62,6 +67,17 @@ export const webhookErrorDescription = "Webhook returned an error.";
 
 type Params = { disableRequestTimeout?: boolean; timeout?: number };
 
+type SafeProxyRequestDependencies = {
+  proxyLookup?: LookupFunction;
+  proxyAgentFactory?: NonNullable<Parameters<typeof createSafeProxyAgent>[1]>;
+};
+
+type ExecuteHttpRequestDependencies = SafeProxyRequestDependencies & {
+  proxyUrlValidationOptions?: NonNullable<
+    Parameters<typeof validateHttpReqUrl>[1]
+  >;
+};
+
 export const executeHttpRequestBlock = async (
   block: HttpRequestBlock | ZapierBlock | MakeComBlock | PabblyConnectBlock,
   {
@@ -76,9 +92,12 @@ export const executeHttpRequestBlock = async (
   const logs: LogInSession[] = [];
   const httpRequest =
     block.options?.webhook ??
-    ("webhookId" in block
+    ("webhookId" in block && block.webhookId
       ? ((await prisma.webhook.findUnique({
-          where: { id: block.webhookId },
+          where: {
+            id: block.webhookId,
+            typebotId: state.typebotsQueue[0].typebot.id,
+          },
         })) as HttpRequest | null)
       : null);
   if (!httpRequest) return { outgoingEdgeId: block.outgoingEdgeId };
@@ -159,29 +178,26 @@ export const parseHttpRequestAttributes = async ({
   };
 }): Promise<ParsedHttpRequest | undefined> => {
   if (!httpRequest.url) return;
-  const basicAuth: { username?: string; password?: string } = {};
-  const basicAuthHeaderIdx = httpRequest.headers?.findIndex(
-    (h) =>
-      h.key?.toLowerCase() === "authorization" &&
-      h.value?.toLowerCase()?.includes("basic"),
-  );
-  const isUsernamePasswordBasicAuth =
-    basicAuthHeaderIdx !== -1 &&
-    isDefined(basicAuthHeaderIdx) &&
-    httpRequest.headers?.at(basicAuthHeaderIdx)?.value?.includes(":");
-  if (isUsernamePasswordBasicAuth) {
-    const [username, password] =
-      httpRequest.headers?.at(basicAuthHeaderIdx)?.value?.slice(6).split(":") ??
-      [];
-    basicAuth.username = username;
-    basicAuth.password = password;
-    httpRequest.headers?.splice(basicAuthHeaderIdx, 1);
-  }
-  const headers = convertKeyValueTableToObject({
+  let headers = convertKeyValueTableToObject({
     keyValues: httpRequest.headers,
     variables,
     sessionStore,
   }) as ExecutableHttpRequest["headers"] | undefined;
+  const basicAuthHeaderEntry = Object.entries(headers ?? {}).find(
+    ([key, value]) =>
+      key.toLowerCase() === "authorization" && /^basic\s+/i.test(value),
+  );
+  const basicAuthCredentials = basicAuthHeaderEntry?.[1].replace(
+    /^basic\s+/i,
+    "",
+  );
+  if (basicAuthHeaderEntry && basicAuthCredentials?.includes(":"))
+    headers = {
+      ...headers,
+      [basicAuthHeaderEntry[0]]: `Basic ${Buffer.from(
+        basicAuthCredentials,
+      ).toString("base64")}`,
+    };
   const queryParams = stringify(
     convertKeyValueTableToObject({
       keyValues: httpRequest.queryParams,
@@ -222,7 +238,6 @@ export const parseHttpRequestAttributes = async ({
       httpRequest.url + (queryParams !== "" ? `?${queryParams}` : ""),
       { variables, sessionStore },
     ),
-    basicAuth,
     method,
     headers,
     body,
@@ -234,6 +249,11 @@ export const parseHttpRequestAttributes = async ({
 export const executeHttpRequest = async (
   httpRequest: ParsedHttpRequest,
   params: Params = {},
+  {
+    proxyUrlValidationOptions,
+    proxyLookup,
+    proxyAgentFactory,
+  }: ExecuteHttpRequestDependencies = {},
 ): Promise<{
   response: HttpResponse;
   logs?: LogInSession[];
@@ -241,10 +261,12 @@ export const executeHttpRequest = async (
 }> => {
   const logs: LogInSession[] = [];
 
-  const { headers, url, method, basicAuth, isJson } = httpRequest;
+  const { headers, url, method, isJson } = httpRequest;
 
   try {
     await validateHttpReqUrl(url);
+    if (httpRequest.proxyUrl)
+      await validateHttpReqUrl(httpRequest.proxyUrl, proxyUrlValidationOptions);
     validateHttpReqHeaders(headers);
   } catch (error) {
     logs.push({
@@ -281,18 +303,19 @@ export const executeHttpRequest = async (
 
   if (isFormData && isJson) body = parseFormDataBody(body as object);
 
+  const proxyUrl = httpRequest.proxyUrl;
+  const safeProxyRequest = proxyUrl
+    ? createSafeProxyRequest(proxyUrl, { proxyLookup, proxyAgentFactory })
+    : undefined;
   const baseRequest = {
     url,
     method,
     headers: headers ?? {},
-    ...(basicAuth ?? {}),
-    fetch: httpRequest.proxyUrl
-      ? (input: string | URL | Request, init?: RequestInit) =>
-          rebuildFetchWithoutChunkedEncoding(input, {
-            ...init,
-            dispatcher: new ProxyAgent(httpRequest.proxyUrl!),
-          })
-      : rebuildFetchWithoutChunkedEncoding,
+    ...(safeProxyRequest
+      ? {
+          fetch: safeProxyRequest.fetch,
+        }
+      : {}),
     timeout: isNotDefined(env.CHAT_API_TIMEOUT)
       ? false
       : params.timeout && params.timeout !== defaultTimeout
@@ -307,6 +330,7 @@ export const executeHttpRequest = async (
       ? { ...baseRequest, json: body }
       : { ...baseRequest, body }
     : baseRequest;
+  const requestForLogs = omit(request, "headers");
 
   try {
     const response = await safeKy(request.url, omit(request, "url"));
@@ -317,7 +341,7 @@ export const executeHttpRequest = async (
       details: JSON.stringify({
         statusCode: response.status,
         response: body,
-        request,
+        request: requestForLogs,
       }),
     });
     return {
@@ -339,7 +363,7 @@ export const executeHttpRequest = async (
         description: webhookErrorDescription,
         details: JSON.stringify({
           statusCode: error.response.status,
-          request,
+          request: requestForLogs,
           response,
         }),
       });
@@ -356,12 +380,10 @@ export const executeHttpRequest = async (
       };
       logs.push({
         status: "error",
-        description: `Webhook request timed out. (${
-          (request.timeout ? request.timeout : 0) / 1000
-        }s)`,
+        description: webhookErrorDescription,
         details: JSON.stringify({
           response,
-          request,
+          request: requestForLogs,
         }),
       });
       return { response, logs, startTimeShouldBeUpdated: true };
@@ -374,17 +396,50 @@ export const executeHttpRequest = async (
       statusCode: 500,
       data: parsedError,
     };
-    console.error(error);
     logs.push({
       status: "error",
-      description: "Webhook failed to execute.",
+      description: webhookErrorDescription,
       details: JSON.stringify({
         response,
-        request,
+        request: requestForLogs,
       }),
     });
     return { response, logs, startTimeShouldBeUpdated: true };
+  } finally {
+    await safeProxyRequest?.destroy();
   }
+};
+
+const createSafeProxyRequest = (
+  proxyUrl: string,
+  { proxyLookup, proxyAgentFactory }: SafeProxyRequestDependencies,
+) => {
+  const proxyAgents = new Map<string, ProxyAgent>();
+  return {
+    fetch: createSafeFetchWithoutChunkedEncoding((validatedUrl) => {
+      const proxyAgent =
+        proxyAgents.get(validatedUrl.hostname) ??
+        createSafeProxyAgent(
+          {
+            proxyUrl,
+            targetHostname: validatedUrl.hostname,
+            proxyLookup,
+          },
+          proxyAgentFactory,
+        );
+      proxyAgents.set(validatedUrl.hostname, proxyAgent);
+      return createPinnedDispatcher(proxyAgent, validatedUrl);
+    }),
+    destroy: async () => {
+      await Promise.allSettled(
+        Array.from(proxyAgents.values()).map((proxyAgent) =>
+          typeof proxyAgent.destroy === "function"
+            ? proxyAgent.destroy()
+            : Promise.resolve(),
+        ),
+      );
+    },
+  };
 };
 
 const getBodyContent = async ({

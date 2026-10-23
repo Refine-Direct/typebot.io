@@ -110,8 +110,6 @@ model Workspace {
   // TODO: remove
   settings                      Json?
   lastActivityAt                DateTime?
-  inactiveFirstEmailSentAt      DateTime?
-  inactiveSecondEmailSentAt     DateTime?
   spaces                        Space[]
 }
 
@@ -181,10 +179,11 @@ model UserCredentials {
 }
 
 model VerificationToken {
-  identifier String
-  token      String   @unique
-  value      String?
-  expires    DateTime
+  identifier     String
+  token          String   @unique
+  value          String?
+  failedAttempts Int      @default(0)
+  expires        DateTime
 
   @@unique([identifier, token])
 }

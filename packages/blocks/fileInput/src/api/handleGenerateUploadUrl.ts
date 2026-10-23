@@ -9,6 +9,7 @@ import { parseGroups } from "@typebot.io/groups/helpers/parseGroups";
 import { parseAllowedFileTypesMetadata } from "@typebot.io/lib/extensionFromMimeType";
 import {
   createUploadFileName,
+  parseUploadPathSegment,
   resolveStoredUploadFileType,
   resolveUploadContentDisposition,
   resolveUploadFileType,
@@ -41,7 +42,7 @@ export const handleGenerateUploadUrl = async ({
 
   const session = await getSession(sessionId);
 
-  if (!session?.state)
+  if (!session?.state || session.state.whatsApp)
     throw new ORPCError("BAD_REQUEST", {
       message: "Can't find session",
     });
@@ -97,7 +98,7 @@ export const handleGenerateUploadUrl = async ({
       : undefined;
 
   if (
-    allowedFileTypesMetadata?.length &&
+    allowedFileTypesMetadata &&
     (!fileType ||
       !allowedFileTypesMetadata.some(
         (metadata) => metadata.mimeType === resolvedFileType,
@@ -116,13 +117,17 @@ export const handleGenerateUploadUrl = async ({
 
   const resultId = session.state.typebotsQueue[0].resultId;
   const uploadFileName = createUploadFileName(resolvedFileType);
+  const typebotPathSegment = parseUploadPathSegment(typebotId);
+  const blockPathSegment = parseUploadPathSegment(currentBlockId);
 
   const filePath =
     "workspaceId" in typebot && typebot.workspaceId && resultId
-      ? `${visibility === "Private" ? "private" : "public"}/workspaces/${
-          typebot.workspaceId
-        }/typebots/${typebotId}/results/${resultId}/blocks/${currentBlockId}/${uploadFileName}`
-      : `public/tmp/typebots/${typebotId}/blocks/${currentBlockId}/${uploadFileName}`;
+      ? `${visibility === "Private" ? "private" : "public"}/workspaces/${parseUploadPathSegment(
+          typebot.workspaceId,
+        )}/typebots/${typebotPathSegment}/results/${parseUploadPathSegment(
+          resultId,
+        )}/blocks/${blockPathSegment}/${uploadFileName}`
+      : `public/tmp/typebots/${typebotPathSegment}/blocks/${blockPathSegment}/${uploadFileName}`;
 
   const {
     presignedUrl,

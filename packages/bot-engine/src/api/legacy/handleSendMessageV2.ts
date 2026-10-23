@@ -27,7 +27,15 @@ export const handleSendMessageV2 = async ({
   context: Context;
 }) => {
   const session = sessionId ? await getSession(sessionId) : null;
-  const newSessionId = sessionId ?? createId();
+  if (session?.state?.whatsApp)
+    throw new ORPCError("NOT_FOUND", {
+      message: "Session not found.",
+    });
+
+  const newSessionId =
+    !session?.state && startParams?.isPreview
+      ? createId()
+      : (sessionId ?? createId());
 
   const isSessionExpired =
     session?.state &&
@@ -59,49 +67,41 @@ export const handleSendMessageV2 = async ({
       } = await startSession({
         version: 2,
         sessionStore,
-        startParams:
-          startParams.isPreview || typeof startParams.typebot !== "string"
-            ? {
-                type: "preview",
-                isOnlyRegistering: startParams.isOnlyRegistering ?? false,
-                isStreamEnabled: startParams.isStreamEnabled ?? false,
-                startFrom:
-                  "startGroupId" in startParams && startParams.startGroupId
+        startParams: startParams.isPreview
+          ? {
+              type: "preview",
+              isOnlyRegistering: startParams.isOnlyRegistering ?? false,
+              isStreamEnabled: startParams.isStreamEnabled ?? false,
+              startFrom:
+                "startGroupId" in startParams && startParams.startGroupId
+                  ? {
+                      type: "group",
+                      groupId: startParams.startGroupId,
+                    }
+                  : "startEventId" in startParams && startParams.startEventId
                     ? {
-                        type: "group",
-                        groupId: startParams.startGroupId,
+                        type: "event",
+                        eventId: startParams.startEventId,
                       }
-                    : "startEventId" in startParams && startParams.startEventId
-                      ? {
-                          type: "event",
-                          eventId: startParams.startEventId,
-                        }
-                      : undefined,
-                typebotId:
-                  typeof startParams.typebot === "string"
-                    ? startParams.typebot
-                    : startParams.typebot.id,
-                typebot:
-                  typeof startParams.typebot === "string"
-                    ? undefined
-                    : startParams.typebot,
-                message: message ? { type: "text", text: message } : undefined,
-                userId: user?.id,
-                textBubbleContentFormat: "richText",
-              }
-            : {
-                type: "live",
-                isOnlyRegistering: startParams.isOnlyRegistering ?? false,
-                isStreamEnabled: startParams.isStreamEnabled ?? false,
-                publicId: startParams.typebot,
-                prefilledVariables: startParams.prefilledVariables,
-                resultId: startParams.resultId,
-                message: message ? { type: "text", text: message } : undefined,
-                textBubbleContentFormat: "richText",
-              },
+                    : undefined,
+              typebotId: startParams.typebot,
+              message: message ? { type: "text", text: message } : undefined,
+              userId: user?.id,
+              textBubbleContentFormat: "richText",
+            }
+          : {
+              type: "live",
+              isOnlyRegistering: startParams.isOnlyRegistering ?? false,
+              isStreamEnabled: startParams.isStreamEnabled ?? false,
+              publicId: startParams.typebot,
+              prefilledVariables: startParams.prefilledVariables,
+              resultId: startParams.resultId,
+              message: message ? { type: "text", text: message } : undefined,
+              textBubbleContentFormat: "richText",
+            },
       });
 
-      if (startParams.isPreview || typeof startParams.typebot !== "string") {
+      if (startParams.isPreview) {
         assertOriginIsAllowed(origin, {
           allowedOrigins: newSessionState.allowedOrigins,
           iframeReferrerOrigin,
@@ -116,7 +116,7 @@ export const handleSendMessageV2 = async ({
           })
         : await saveStateToDatabase({
             sessionId: {
-              type: "new",
+              type: startParams.isPreview ? "newPreview" : "new",
               id: newSessionId,
             },
             session: {
@@ -169,6 +169,7 @@ export const handleSendMessageV2 = async ({
     } = await continueBotFlow(
       message ? { type: "text", text: message } : undefined,
       {
+        sessionId: session.id,
         version: 2,
         state: session.state,
         textBubbleContentFormat: "richText",

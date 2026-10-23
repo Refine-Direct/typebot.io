@@ -12,6 +12,7 @@ import { WHATSAPP_PREVIEW_SESSION_ID_PREFIX } from "@typebot.io/whatsapp/constan
 import { normalizeWhatsAppPreviewPhoneNumber } from "@typebot.io/whatsapp/normalizeWhatsAppPreviewPhoneNumber";
 import { resumeWhatsAppFlow } from "@typebot.io/whatsapp/resumeWhatsAppFlow";
 import { z } from "zod";
+import { signWhatsAppWebhookResponse } from "./signWhatsAppWebhookResponse";
 
 export const executeTestWebhookWhatsAppInputSchema = z.object({
   params: z.object({
@@ -51,13 +52,16 @@ export const handleExecuteTestWebhookWhatsApp = async ({
           isSuspended: true,
           isPastDue: true,
           members: {
+            where: { userId: user.id },
             select: {
               userId: true,
+              role: true,
             },
           },
         },
       },
       collaborators: {
+        where: { userId: user.id },
         select: {
           userId: true,
         },
@@ -106,10 +110,7 @@ export const handleExecuteTestWebhookWhatsApp = async ({
         timestamp: new Date().toISOString(),
         type: "webhook",
         webhook: {
-          data:
-            typeof body === "string"
-              ? JSON.stringify({ data: JSON.parse(body) })
-              : JSON.stringify({ data: body }, null, 2),
+          data: await signWhatsAppWebhookResponse(chatSession.state, body),
         },
       },
     ],

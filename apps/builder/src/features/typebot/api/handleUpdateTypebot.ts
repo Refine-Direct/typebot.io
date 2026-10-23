@@ -1,4 +1,5 @@
 import { ORPCError } from "@orpc/server";
+import { parseGroups } from "@typebot.io/groups/helpers/parseGroups";
 import prisma from "@typebot.io/prisma";
 import { DbNull } from "@typebot.io/prisma/enum";
 import { settingsSchema } from "@typebot.io/settings/schemas";
@@ -11,6 +12,7 @@ import {
 import type { User } from "@typebot.io/user/schemas";
 import { z } from "zod";
 import { isCloudProdInstance } from "@/helpers/isCloudProdInstance";
+import { isPublicIdValid } from "../helpers/isPublicIdValid";
 import { isWriteTypebotForbidden } from "../helpers/isWriteTypebotForbidden";
 import {
   isCustomDomainNotAvailable,
@@ -74,6 +76,7 @@ export const handleUpdateTypebot = async ({
     },
     select: {
       version: true,
+      groups: true,
       id: true,
       customDomain: true,
       publicId: true,
@@ -146,11 +149,20 @@ export const handleUpdateTypebot = async ({
       });
   }
 
-  const groups = typebot.groups
-    ? await sanitizeGroups(typebot.groups, {
-        workspace: existingTypebot.workspace,
-      })
-    : undefined;
+  // A version-only downgrade can reactivate persisted legacy references.
+  const groups =
+    typebot.groups || typebot.version !== undefined
+      ? await sanitizeGroups(
+          typebot.groups ??
+            parseGroups(existingTypebot.groups, {
+              typebotVersion: existingTypebot.version,
+            }),
+          {
+            workspace: existingTypebot.workspace,
+            typebotId: existingTypebot.id,
+          },
+        )
+      : undefined;
 
   const newTypebot = await prisma.typebot.update({
     where: {
@@ -230,9 +242,6 @@ export const handleUpdateTypebot = async ({
 
   return { typebot: migratedTypebot };
 };
-
-const isPublicIdValid = (str: string) =>
-  /^([a-z0-9]+-[a-z0-9]*)*$/.test(str) || /^[a-z0-9]*$/.test(str);
 
 const disableWhatsAppSettings = (settings: unknown) => {
   const parsedSettings = settingsSchema.parse(settings);

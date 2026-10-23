@@ -24,6 +24,10 @@ import { Effect, Layer } from "effect";
 import { convertInvitationsToCollaborations } from "./convertInvitationsToCollaborations";
 import { getNewUserInvitations } from "./getNewUserInvitations";
 import { joinWorkspaces } from "./joinWorkspaces";
+import {
+  EMAIL_SIGN_IN_VERIFICATION_TOKEN_VALUE,
+  recordFailedEmailSignInAttempt,
+} from "./recordFailedEmailSignInAttempt";
 
 const MainLayer = Layer.provideMerge(
   Layer.provide(UsersWorkflowsRpcClient.layer, WorkflowsRpcClientConfig.layer),
@@ -173,32 +177,48 @@ export const createAuthPrismaAdapter = (p: Prisma.PrismaClient): Adapter => ({
   deleteSession: (sessionToken) =>
     p.session.delete({ where: { sessionToken } }),
   async createVerificationToken(data) {
-    const verificationToken = await p.verificationToken.create(
-      stripUndefined(data),
-    );
+    const verificationToken = await p.verificationToken.create({
+      data: {
+        ...stripUndefined(data).data,
+        value: EMAIL_SIGN_IN_VERIFICATION_TOKEN_VALUE,
+      },
+    });
     if ("id" in verificationToken && verificationToken.id) {
       return omit(verificationToken, "id");
     }
     return verificationToken;
   },
-  async useVerificationToken(identifier_token) {
-    try {
-      const verificationToken = await p.verificationToken.delete({
-        where: { identifier_token },
+  useVerificationToken(identifier_token) {
+    return p.$transaction(async (tx) => {
+      // Acquire database row locks before comparing any candidate. Keep them
+      // until consumption or failed-attempt accounting commits, so concurrent
+      // guesses cannot race ahead of the failure budget. Incrementing by zero
+      // preserves the counter and works with both PostgreSQL and MySQL.
+      await tx.verificationToken.updateMany({
+        where: { identifier: identifier_token.identifier },
+        data: { failedAttempts: { increment: 0 } },
       });
-      if ("id" in verificationToken && verificationToken.id) {
-        return omit(verificationToken, "id");
+
+      try {
+        const verificationToken = await tx.verificationToken.delete({
+          where: { identifier_token },
+        });
+        if ("id" in verificationToken && verificationToken.id) {
+          return omit(verificationToken, "id");
+        }
+        return verificationToken;
+      } catch (error: unknown) {
+        // If token already used/deleted
+        if (
+          error instanceof PrismaClientKnownRequestError &&
+          error.code === "P2025"
+        ) {
+          await recordFailedEmailSignInAttempt(tx, identifier_token.identifier);
+          return null;
+        }
+        throw error;
       }
-      return verificationToken;
-    } catch (error: unknown) {
-      // If token already used/deleted
-      if (
-        error instanceof PrismaClientKnownRequestError &&
-        error.code === "P2025"
-      )
-        return null;
-      throw error;
-    }
+    });
   },
   async getAccount(providerAccountId, provider) {
     return p.account.findFirst({

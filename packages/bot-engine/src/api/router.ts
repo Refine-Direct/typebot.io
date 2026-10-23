@@ -25,7 +25,9 @@ import {
 import { handleStartChat, startChatInputSchema } from "./handleStartChat";
 import {
   handleStartChatPreview,
+  handleStartTemplatePreviewChat,
   startPreviewChatInputSchema,
+  startTemplatePreviewChatInputSchema,
 } from "./handleStartChatPreview";
 import {
   handleUpdateTypebotInSession,
@@ -63,6 +65,14 @@ export const builderChatRouter = {
     .input(startPreviewChatInputSchema)
     .output(startPreviewChatResponseSchema)
     .handler(handleStartChatPreview),
+  startTemplatePreviewChatProcedure: authenticatedProcedure
+    .route({
+      method: "POST",
+      path: "/v1/templates/{templateSlug}/preview/startChat",
+    })
+    .input(startTemplatePreviewChatInputSchema)
+    .output(startPreviewChatResponseSchema)
+    .handler(handleStartTemplatePreviewChat),
 };
 
 export const chatRouter = {
@@ -70,6 +80,7 @@ export const chatRouter = {
     .route({
       method: "POST",
       path: "/v1/typebots/{publicId}/startChat",
+      operationId: "startChat",
       summary: "Start chat",
       tags: ["Chat"],
     })
@@ -80,6 +91,7 @@ export const chatRouter = {
     .route({
       method: "POST",
       path: "/v1/sessions/{sessionId}/continueChat",
+      operationId: "continueChat",
       summary: "Continue chat",
       tags: ["Chat"],
     })
@@ -90,6 +102,7 @@ export const chatRouter = {
     .route({
       method: "POST",
       path: "/v2/sessions/{sessionId}/clientLogs",
+      operationId: "saveClientLogs",
       summary: "Save logs",
       tags: ["Chat"],
     })
@@ -100,6 +113,7 @@ export const chatRouter = {
     .route({
       method: "POST",
       path: "/v1/typebots/{typebotId}/preview/startChat",
+      operationId: "startChatPreview",
       summary: "Start preview chat",
       description:
         'Use this endpoint to test your bot. The answers will not be saved. And some blocks like "Send email" will be skipped.',
@@ -108,10 +122,23 @@ export const chatRouter = {
     .input(startPreviewChatInputSchema)
     .output(startPreviewChatResponseSchema)
     .handler(handleStartChatPreview),
+  startTemplatePreviewChatProcedure: protectedProcedure
+    .route({
+      method: "POST",
+      path: "/v1/templates/{templateSlug}/preview/startChat",
+      summary: "Start template preview chat",
+      description:
+        "Use this endpoint to preview a Typebot template by slug without sending a client-side typebot override.",
+      tags: ["Chat"],
+    })
+    .input(startTemplatePreviewChatInputSchema)
+    .output(startPreviewChatResponseSchema)
+    .handler(handleStartTemplatePreviewChat),
   updateTypebotInSessionProcedure: protectedProcedure
     .route({
       method: "POST",
       path: "/v1/sessions/{sessionId}/updateTypebot",
+      operationId: "updateTypebotInSession",
       summary: "Update typebot in session",
       description:
         "Update chat session with latest typebot modifications. This is useful when you want to update the typebot in an ongoing session after making changes to it.",

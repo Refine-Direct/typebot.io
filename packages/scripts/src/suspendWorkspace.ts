@@ -1,34 +1,31 @@
-import { isCancel, select, text } from "@clack/prompts";
 import { isEmpty } from "@typebot.io/lib/utils";
-import prisma from "@typebot.io/prisma";
-import { promptAndSetEnvironment } from "./utils";
+import {
+  assertProductionEnvironment,
+  confirmAction,
+  getIdentifierInput,
+  runScript,
+} from "./cli";
 
 const suspendWorkspace = async () => {
-  await promptAndSetEnvironment("production");
+  assertProductionEnvironment();
 
-  const type = await select<"id" | "publicId" | "workspaceId">({
+  const { default: prisma } = await import("@typebot.io/prisma");
+
+  const { type, value } = await getIdentifierInput({
     message: "Select way",
     options: [
-      { label: "Typebot ID", value: "id" },
-      { label: "Typebot public ID", value: "publicId" },
-      { label: "Workspace ID", value: "workspaceId" },
+      { label: "Typebot ID", name: "typebot-id" },
+      { label: "Typebot public ID", name: "public-id" },
+      { label: "Workspace ID", name: "workspace-id" },
     ],
   });
 
-  if (!type || isCancel(type)) return;
-
-  const val = await text({
-    message: "Enter value",
-  });
-
-  if (!val || isCancel(val)) return;
-
-  let workspaceId = type === "workspaceId" ? val : undefined;
+  let workspaceId = type === "workspace-id" ? value : undefined;
 
   if (!workspaceId) {
     const typebot = await prisma.typebot.findFirst({
       where: {
-        [type]: val,
+        [type === "typebot-id" ? "id" : "publicId"]: value,
       },
       select: {
         workspaceId: true,
@@ -48,6 +45,36 @@ const suspendWorkspace = async () => {
     return;
   }
 
+  const workspace = await prisma.workspace.findUnique({
+    where: {
+      id: workspaceId,
+    },
+    select: {
+      id: true,
+      name: true,
+      isSuspended: true,
+    },
+  });
+
+  if (!workspace) {
+    console.log("Workspace not found");
+    return;
+  }
+
+  if (workspace.isSuspended) {
+    console.log("Workspace is already suspended");
+    return;
+  }
+
+  console.log(JSON.stringify(workspace, null, 2));
+
+  if (
+    !(await confirmAction({
+      message: "Suspend this production workspace?",
+    }))
+  )
+    return;
+
   const result = await prisma.workspace.update({
     where: {
       id: workspaceId,
@@ -60,4 +87,4 @@ const suspendWorkspace = async () => {
   console.log(JSON.stringify(result, null, 2));
 };
 
-suspendWorkspace();
+runScript(suspendWorkspace);

@@ -86,3 +86,14 @@ content-collections.d.ts
 
 .agents/skills/typebot-prod-db
 .claude/skills/typebot-prod-db
+/.turbo
+/logs
+/apps/builder/.turbo/turbo-build.log
+/apps/viewer/.turbo/turbo-build.log
+/packages/deprecated/bot-engine/.turbo/turbo-build.log
+/packages/deprecated/typebot-js/.turbo/turbo-build.log
+/packages/embeds/js/.turbo/turbo-build.log
+/packages/embeds/react/.turbo/turbo-build.log
+/packages/env/.turbo/turbo-build.log
+/packages/prisma/.turbo/turbo-db$colon$generate.log
+/packages/prisma/.turbo/turbo-db$colon$migrate.log

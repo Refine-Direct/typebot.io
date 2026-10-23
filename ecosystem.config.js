@@ -4,7 +4,8 @@ module.exports = {
       name: "builder",
       cwd: "C:\\typebot",
       script: "cmd.exe",
-      args: '/c bunx nx start builder -p 3001',
+//      args: '/c bunx nx start builder -p 3001',
+	  args: '/c bunx dotenv -e apps/builder/.env -e .env -- nx start builder -- -p 3001',
 
       autorestart: true,
       restart_delay: 2000,
@@ -24,7 +25,8 @@ module.exports = {
       name: "viewer",
       cwd: "C:\\typebot",
       script: "cmd.exe",
-      args: '/c bunx nx start viewer -p 3002',   // ← Change port if needed
+//      args: '/c bunx nx start viewer -p 3002',   // ← Change port if needed
+	  args: '/c bunx dotenv -e apps/viewer/.env -e .env -- nx start viewer -- -p 3002',
 
       autorestart: true,
       restart_delay: 2000,

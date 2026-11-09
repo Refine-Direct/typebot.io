@@ -1,0 +1,16 @@
+{
+  "$schema": "../../node_modules/nx/schemas/project-schema.json",
+  "name": "cleanup-expired-data",
+  "projectType": "application",
+  "implicitDependencies": ["@typebot.io/scripts"],
+  "targets": {
+    "run": {
+      "executor": "nx:run-commands",
+      "cache": false,
+      "options": {
+        "command": "tsx --tsconfig ./tsconfig.json ../../jobs/cleanup-expired-data/cleanup-expired-data.ts",
+        "cwd": "packages/scripts"
+      }
+    }
+  }
+}
